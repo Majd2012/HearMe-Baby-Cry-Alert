@@ -54,12 +54,15 @@ the detector state machine applies smoothing, a trigger threshold, a lower clear
 threshold, persistence, cooldown, and rearming rules. The default mobile
 configuration is:
 
-- trigger threshold: `0.30`
-- clear threshold: `0.20`
-- smoothing: rolling mean over 3 app segments
-- persistence: 3 positive app segments
-- cooldown: 120 seconds
-- rearming: 5 seconds below the clear threshold
+- trigger threshold: `0.05`
+- clear threshold: `0.00`
+- smoothing: none
+- persistence: 1 positive app segment
+- cooldown: 10 seconds
+- rearming: 2 seconds below the clear threshold
+
+This selected configuration came from the first synthetic one-hour night test.
+It should be revalidated on real labeled long recordings before final use.
 
 The state machine uses `IDLE`, `POSSIBLE_CRY`, `CONFIRMED_CRY`, `ALERTED`,
 `COOLDOWN`, and `REARMING`. The phone sends a watch message only when a cry is

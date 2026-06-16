@@ -3,6 +3,7 @@
 .kotlin/
 .venv/
 .pytest_cache/
+.matplotlib/
 __pycache__/
 *.pyc
 **/build/

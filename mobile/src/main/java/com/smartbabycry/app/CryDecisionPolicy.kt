@@ -16,14 +16,14 @@ enum class SmoothingMode {
 }
 
 data class CryDetectionConfig(
-    val triggerThreshold: Float = 0.30f,
-    val clearThreshold: Float = 0.20f,
-    val persistenceFrames: Int = 3,
-    val smoothingMode: SmoothingMode = SmoothingMode.ROLLING_MEAN,
-    val smoothingWindowFrames: Int = 3,
+    val triggerThreshold: Float = 0.05f,
+    val clearThreshold: Float = 0.00f,
+    val persistenceFrames: Int = 1,
+    val smoothingMode: SmoothingMode = SmoothingMode.NONE,
+    val smoothingWindowFrames: Int = 1,
     val emaAlpha: Float = 0.35f,
-    val cooldownMillis: Long = 120_000L,
-    val rearmingMillis: Long = 5_000L,
+    val cooldownMillis: Long = 10_000L,
+    val rearmingMillis: Long = 2_000L,
     val frameStepMillis: Long = AudioMonitor.SEGMENT_SECONDS * 1_000L,
 ) {
     init {

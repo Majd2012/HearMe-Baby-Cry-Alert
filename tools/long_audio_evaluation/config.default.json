@@ -17,15 +17,15 @@
   "default_policy": {
     "aggregation": "max",
     "decision_window_frames": 1,
-    "trigger_threshold": 0.30,
-    "clear_threshold": 0.20,
-    "persistence_frames": 3,
-    "smoothing": "rolling_mean",
-    "smoothing_window_frames": 3,
+    "trigger_threshold": 0.05,
+    "clear_threshold": 0.00,
+    "persistence_frames": 1,
+    "smoothing": "none",
+    "smoothing_window_frames": 1,
     "ema_alpha": 0.35,
-    "gap_merge_seconds": 1.0,
-    "cooldown_seconds": 120.0,
-    "rearming_seconds": 5.0
+    "gap_merge_seconds": 0.0,
+    "cooldown_seconds": 10.0,
+    "rearming_seconds": 2.0
   },
   "sweep": {
     "aggregation": ["max", "mean", "median", "p90", "topk_mean"],

@@ -26,12 +26,15 @@ Watch flow:
 
 Default mobile policy after this update:
 
-- trigger threshold: `0.30`
-- clear threshold: `0.20`
-- smoothing: rolling mean over 3 app segments
-- persistence: 3 positive app segments
-- cooldown: 120 seconds
-- rearming: 5 seconds below clear threshold
+- trigger threshold: `0.05`
+- clear threshold: `0.00`
+- smoothing: none
+- persistence: 1 positive app segment
+- cooldown: 10 seconds
+- rearming: 2 seconds below clear threshold
+
+This selected configuration is based on the first synthetic one-hour evaluation
+and must be checked again with real labeled long recordings.
 
 Important limitation:
 

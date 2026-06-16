@@ -4,6 +4,5 @@ matplotlib>=3.7
 soundfile>=0.12
 scipy>=1.10
 tqdm>=4.66
-# Install one of these for real YAMNet inference:
-# tensorflow>=2.15
-# tflite-runtime>=2.14
+tensorflow>=2.15
+# tflite-runtime can be used instead of tensorflow on supported Python builds.
