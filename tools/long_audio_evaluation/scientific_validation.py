@@ -427,7 +427,7 @@ def create_zoom_plots(before, after, gt, before_events, after_events, original, 
     if not missed.empty:
         row = missed.iloc[0]
         windows.append(("difficult_or_missed_cry", max(0, row["ground_truth_start"] - 10), row["ground_truth_end"] + 15))
-    windows.append(("non_cry_section", 1200.0, 1260.0))
+    windows.append(("non_cry_section", *find_non_cry_window(gt, float(before["frame_center_seconds"].max()))))
     for label, start, end in windows:
         local_gt = [event for event in gt if event.end_sec >= start and event.start_sec <= end]
         plot_timeline(
@@ -450,6 +450,17 @@ def create_zoom_plots(before, after, gt, before_events, after_events, original, 
             (start, end),
             y_limits,
         )
+
+
+def find_non_cry_window(gt, duration: float, window_seconds: float = 60.0):
+    start = 0.0
+    while start + window_seconds <= duration:
+        end = start + window_seconds
+        overlaps = [event for event in gt if event.end_sec >= start and event.start_sec <= end]
+        if not overlaps:
+            return start, end
+        start += window_seconds
+    return max(0.0, duration - window_seconds), duration
 
 
 def plot_before_after_metrics(df, base):
