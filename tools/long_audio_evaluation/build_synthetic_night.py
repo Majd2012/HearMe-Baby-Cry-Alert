@@ -15,8 +15,9 @@ from detector_core import seconds_to_timestamp
 
 def main():
     parser = argparse.ArgumentParser(description="Build reproducible synthetic long-night audio.")
-    parser.add_argument("--background", required=True, type=Path)
+    parser.add_argument("--background", required=True, type=Path, action="append")
     parser.add_argument("--cry-dir", required=True, type=Path)
+    parser.add_argument("--cry-file", type=Path, action="append", default=[])
     parser.add_argument("--duration-hours", type=float)
     parser.add_argument("--duration-minutes", type=float)
     parser.add_argument("--number-of-events", type=int, default=8)
@@ -34,14 +35,14 @@ def main():
     rng = random.Random(args.seed)
     np_rng = np.random.default_rng(args.seed)
 
-    background = load_audio(args.background, sample_rate)
     total_samples = int(round(duration * sample_rate))
-    night = tile_to_length(background, total_samples)
+    night = build_background(args.background, total_samples, sample_rate, np_rng)
 
     cry_files = sorted(
         file for file in args.cry_dir.iterdir()
-        if file.suffix.lower() in {".wav", ".flac", ".ogg", ".aiff", ".aif"}
+        if file.suffix.lower() in supported_audio_extensions()
     )
+    cry_files.extend(file for file in args.cry_file if file.suffix.lower() in supported_audio_extensions())
     if not cry_files:
         raise ValueError("No usable cry files found. Provide legal user-supplied cry audio.")
 
@@ -92,7 +93,7 @@ def main():
                 "seed": args.seed,
                 "sample_rate": sample_rate,
                 "duration_seconds": duration,
-                "background": str(args.background),
+                "background": [str(path) for path in args.background],
                 "number_of_events": len(manifest_events),
                 "events": manifest_events,
                 "note": "Uses only user-supplied audio; no audio was downloaded.",
@@ -119,6 +120,25 @@ def load_audio(path: Path, sample_rate: int) -> np.ndarray:
         gcd = math.gcd(rate, sample_rate)
         mono = resample_poly(mono, sample_rate // gcd, rate // gcd).astype(np.float32)
     return np.clip(mono, -1.0, 1.0)
+
+
+def supported_audio_extensions() -> set[str]:
+    return {".wav", ".flac", ".ogg", ".aiff", ".aif", ".mp3", ".m4a"}
+
+
+def build_background(paths: list[Path], total_samples: int, sample_rate: int, rng) -> np.ndarray:
+    tracks = []
+    for path in paths:
+        audio = tile_to_length(load_audio(path, sample_rate), total_samples)
+        gain = float(rng.uniform(0.35, 0.75))
+        tracks.append(audio * gain)
+    if not tracks:
+        return np.zeros(total_samples, dtype=np.float32)
+    mixed = np.sum(np.stack(tracks), axis=0) / max(1, len(tracks))
+    peak = float(np.max(np.abs(mixed))) if len(mixed) else 0.0
+    if peak > 0.75:
+        mixed = mixed * (0.75 / peak)
+    return mixed.astype(np.float32)
 
 
 def tile_to_length(audio: np.ndarray, samples: int) -> np.ndarray:

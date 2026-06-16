@@ -10,5 +10,7 @@ local.properties
 *.iml
 outputs/
 work/
+data/
+results/
 captures/
 *.apk
