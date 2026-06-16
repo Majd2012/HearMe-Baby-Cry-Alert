@@ -18,14 +18,14 @@
     "aggregation": "max",
     "decision_window_frames": 1,
     "trigger_threshold": 0.05,
-    "clear_threshold": 0.00,
-    "persistence_frames": 1,
-    "smoothing": "none",
-    "smoothing_window_frames": 1,
+    "clear_threshold": 0.03,
+    "persistence_frames": 2,
+    "smoothing": "rolling_mean",
+    "smoothing_window_frames": 3,
     "ema_alpha": 0.35,
-    "gap_merge_seconds": 0.0,
-    "cooldown_seconds": 10.0,
-    "rearming_seconds": 2.0
+    "gap_merge_seconds": 1.0,
+    "cooldown_seconds": 30.0,
+    "rearming_seconds": 5.0
   },
   "sweep": {
     "aggregation": ["max", "mean", "median", "p90", "topk_mean"],

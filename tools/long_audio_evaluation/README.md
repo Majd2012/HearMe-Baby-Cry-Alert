@@ -59,6 +59,19 @@ python .\tools\long_audio_evaluation\evaluate_long_audio.py `
 Edit `config.default.json` or pass `--config my_config.json` to change
 thresholds, persistence, smoothing, cooldown, rearming, and cost weights.
 
+## Scientific Before/After Validation
+
+```powershell
+python .\tools\long_audio_evaluation\scientific_validation.py `
+  --output-dir .\results\scientific_validation `
+  --duration-minutes 30 `
+  --events-per-night 6 `
+  --seeds 42,77,123
+```
+
+This creates the required before/after timelines, metrics comparison,
+multi-night parameter sweep, best-operating-point graph, and academic report.
+
 ## Synthetic Night
 
 ```powershell

@@ -10,7 +10,7 @@ The first prototype includes:
 - 16 kHz mono microphone capture on the Android phone
 - 5-second audio segments captured at 16 kHz
 - on-device YAMNet TensorFlow Lite inference
-- a 2-minute rolling confirmation window and configurable 2-5 minute cooldown
+- optimized state-machine alert policy with persistence, cooldown, and rearming
 - Wear OS Data Layer messages
 - watch vibration, notification, alert screen, and confirmation button
 - a manual test-alert button for testing the phone/watch connection
@@ -55,14 +55,16 @@ threshold, persistence, cooldown, and rearming rules. The default mobile
 configuration is:
 
 - trigger threshold: `0.05`
-- clear threshold: `0.00`
-- smoothing: none
-- persistence: 1 positive app segment
-- cooldown: 10 seconds
-- rearming: 2 seconds below the clear threshold
+- clear threshold: `0.03`
+- smoothing: rolling mean over 3 app segments
+- persistence: 2 positive app segments
+- cooldown: 30 seconds
+- rearming: 5 seconds below the clear threshold
 
-This selected configuration came from the first synthetic one-hour night test.
-It should be revalidated on real labeled long recordings before final use.
+This selected configuration came from a three-night synthetic validation. It
+kept false wakeups at zero on the tested data while improving recall over the
+original configuration. It should still be revalidated on real labeled long
+recordings before final use.
 
 The state machine uses `IDLE`, `POSSIBLE_CRY`, `CONFIRMED_CRY`, `ALERTED`,
 `COOLDOWN`, and `REARMING`. The phone sends a watch message only when a cry is
