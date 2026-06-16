@@ -1,5 +1,44 @@
 package com.smartbabycry.app
 
+enum class CryDetectorState {
+    IDLE,
+    POSSIBLE_CRY,
+    CONFIRMED_CRY,
+    ALERTED,
+    COOLDOWN,
+    REARMING,
+}
+
+enum class SmoothingMode {
+    NONE,
+    ROLLING_MEAN,
+    EMA,
+}
+
+data class CryDetectionConfig(
+    val triggerThreshold: Float = 0.30f,
+    val clearThreshold: Float = 0.20f,
+    val persistenceFrames: Int = 3,
+    val smoothingMode: SmoothingMode = SmoothingMode.ROLLING_MEAN,
+    val smoothingWindowFrames: Int = 3,
+    val emaAlpha: Float = 0.35f,
+    val cooldownMillis: Long = 120_000L,
+    val rearmingMillis: Long = 5_000L,
+    val frameStepMillis: Long = AudioMonitor.SEGMENT_SECONDS * 1_000L,
+) {
+    init {
+        require(triggerThreshold in 0f..1f)
+        require(clearThreshold in 0f..1f)
+        require(clearThreshold <= triggerThreshold)
+        require(persistenceFrames > 0)
+        require(smoothingWindowFrames > 0)
+        require(emaAlpha > 0f && emaAlpha <= 1f)
+        require(cooldownMillis >= 0L)
+        require(rearmingMillis >= 0L)
+        require(frameStepMillis > 0L)
+    }
+}
+
 data class CryDecisionState(
     val shouldAlert: Boolean,
     val isCurrentSegmentPositive: Boolean,
@@ -7,13 +46,14 @@ data class CryDecisionState(
     val collectedSegments: Int,
     val requiredPositiveSegments: Int,
     val windowSize: Int,
+    val rawScore: Float,
+    val smoothedScore: Float,
+    val detectorState: CryDetectorState,
+    val transition: String?,
 )
 
 class CryDecisionPolicy(
-    private val threshold: Float = 0.30f,
-    private val confirmationWindowSize: Int = 24,
-    private val minimumPositiveSegments: Int = 20,
-    private val cooldownMillis: Long = DEFAULT_COOLDOWN_MILLIS,
+    private val config: CryDetectionConfig = CryDetectionConfig(),
 ) {
     companion object {
         const val MIN_COOLDOWN_MINUTES = 2L
@@ -22,49 +62,141 @@ class CryDecisionPolicy(
         const val MAX_COOLDOWN_MINUTES = 5L
     }
 
-    init {
-        require(confirmationWindowSize > 0)
-        require(minimumPositiveSegments in 1..confirmationWindowSize)
-        require(
-            cooldownMillis in
-                MIN_COOLDOWN_MINUTES * 60_000L..MAX_COOLDOWN_MINUTES * 60_000L,
-        )
-    }
+    constructor(
+        threshold: Float = 0.30f,
+        confirmationWindowSize: Int = 24,
+        minimumPositiveSegments: Int = 20,
+        cooldownMillis: Long = DEFAULT_COOLDOWN_MILLIS,
+    ) : this(
+        CryDetectionConfig(
+            triggerThreshold = threshold,
+            clearThreshold = maxOf(0f, threshold - 0.10f),
+            persistenceFrames = minimumPositiveSegments,
+            smoothingMode = SmoothingMode.NONE,
+            smoothingWindowFrames = confirmationWindowSize,
+            cooldownMillis = cooldownMillis,
+            rearmingMillis = AudioMonitor.SEGMENT_SECONDS * 1_000L,
+        ),
+    )
 
-    private val recentSegments = ArrayDeque<Boolean>(confirmationWindowSize)
-    private var positiveSegments = 0
+    private val scoreHistory = ArrayDeque<Float>(config.smoothingWindowFrames)
+    private var state = CryDetectorState.IDLE
+    private var consecutivePositiveFrames = 0
+    private var collectedFrames = 0
+    private var emaScore: Float? = null
     private var lastAlertAt = Long.MIN_VALUE
+    private var lowSince: Long? = null
 
     fun update(score: Float, nowMillis: Long = System.currentTimeMillis()): CryDecisionState {
-        val isPositive = score >= threshold
-        recentSegments.addLast(isPositive)
-        if (isPositive) positiveSegments++
+        val smoothedScore = smooth(score)
+        val isPositive = smoothedScore >= config.triggerThreshold
+        val isClear = smoothedScore <= config.clearThreshold
+        val previous = state
+        var shouldAlert = false
 
-        if (recentSegments.size > confirmationWindowSize) {
-            if (recentSegments.removeFirst()) positiveSegments--
+        collectedFrames++
+        consecutivePositiveFrames = if (isPositive) consecutivePositiveFrames + 1 else 0
+        lowSince = if (isClear) lowSince ?: nowMillis else null
+
+        when (state) {
+            CryDetectorState.IDLE -> {
+                if (isPositive) state = CryDetectorState.POSSIBLE_CRY
+            }
+            CryDetectorState.POSSIBLE_CRY -> {
+                if (isClear) {
+                    state = CryDetectorState.IDLE
+                    consecutivePositiveFrames = 0
+                } else if (consecutivePositiveFrames >= config.persistenceFrames) {
+                    state = CryDetectorState.CONFIRMED_CRY
+                }
+            }
+            CryDetectorState.CONFIRMED_CRY -> {
+                if (cooldownComplete(nowMillis)) {
+                    shouldAlert = true
+                    lastAlertAt = nowMillis
+                    state = CryDetectorState.ALERTED
+                } else {
+                    state = CryDetectorState.COOLDOWN
+                }
+            }
+            CryDetectorState.ALERTED -> {
+                if (isClear) state = CryDetectorState.COOLDOWN
+            }
+            CryDetectorState.COOLDOWN -> {
+                if (cooldownComplete(nowMillis) && lowLongEnough(nowMillis)) {
+                    state = CryDetectorState.REARMING
+                }
+            }
+            CryDetectorState.REARMING -> {
+                if (!isClear) {
+                    state = if (isPositive) CryDetectorState.POSSIBLE_CRY else CryDetectorState.IDLE
+                } else if (lowLongEnough(nowMillis)) {
+                    state = CryDetectorState.IDLE
+                    consecutivePositiveFrames = 0
+                }
+            }
         }
 
-        val windowConfirmed =
-            recentSegments.size == confirmationWindowSize &&
-                positiveSegments >= minimumPositiveSegments
-        val cooldownComplete =
-            lastAlertAt == Long.MIN_VALUE || nowMillis - lastAlertAt >= cooldownMillis
-        val shouldAlert = windowConfirmed && cooldownComplete
+        if (previous == CryDetectorState.POSSIBLE_CRY && state == CryDetectorState.CONFIRMED_CRY) {
+            if (cooldownComplete(nowMillis)) {
+                shouldAlert = true
+                lastAlertAt = nowMillis
+                state = CryDetectorState.ALERTED
+            } else {
+                state = CryDetectorState.COOLDOWN
+            }
+        }
 
-        if (shouldAlert) lastAlertAt = nowMillis
         return CryDecisionState(
             shouldAlert = shouldAlert,
             isCurrentSegmentPositive = isPositive,
-            positiveSegments = positiveSegments,
-            collectedSegments = recentSegments.size,
-            requiredPositiveSegments = minimumPositiveSegments,
-            windowSize = confirmationWindowSize,
+            positiveSegments = consecutivePositiveFrames,
+            collectedSegments = collectedFrames,
+            requiredPositiveSegments = config.persistenceFrames,
+            windowSize = config.persistenceFrames,
+            rawScore = score,
+            smoothedScore = smoothedScore,
+            detectorState = state,
+            transition = if (previous != state) "${previous.name}->${state.name}" else null,
         )
     }
 
     fun reset() {
-        recentSegments.clear()
-        positiveSegments = 0
+        scoreHistory.clear()
+        state = CryDetectorState.IDLE
+        consecutivePositiveFrames = 0
+        collectedFrames = 0
+        emaScore = null
         lastAlertAt = Long.MIN_VALUE
+        lowSince = null
     }
+
+    private fun smooth(score: Float): Float {
+        return when (config.smoothingMode) {
+            SmoothingMode.NONE -> score
+            SmoothingMode.ROLLING_MEAN -> {
+                scoreHistory.addLast(score)
+                while (scoreHistory.size > config.smoothingWindowFrames) {
+                    scoreHistory.removeFirst()
+                }
+                scoreHistory.sum() / scoreHistory.size
+            }
+            SmoothingMode.EMA -> {
+                val previous = emaScore
+                val updated = if (previous == null) {
+                    score
+                } else {
+                    config.emaAlpha * score + (1f - config.emaAlpha) * previous
+                }
+                emaScore = updated
+                updated
+            }
+        }
+    }
+
+    private fun cooldownComplete(nowMillis: Long): Boolean =
+        lastAlertAt == Long.MIN_VALUE || nowMillis - lastAlertAt >= config.cooldownMillis
+
+    private fun lowLongEnough(nowMillis: Long): Boolean =
+        lowSince?.let { nowMillis - it >= config.rearmingMillis } == true
 }

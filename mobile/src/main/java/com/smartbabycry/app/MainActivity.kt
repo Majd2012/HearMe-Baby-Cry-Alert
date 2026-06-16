@@ -58,16 +58,18 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     statusDetailText.text = if (latestAudioLevel == 0f) {
                         "No microphone signal. Check the emulator host microphone."
-                    } else if (decision.collectedSegments < decision.windowSize) {
-                        "${decision.positiveSegments} of ${decision.requiredPositiveSegments} cry segments | " +
-                            "${decision.collectedSegments} of ${decision.windowSize} collected"
-                    } else if (decision.positiveSegments < decision.requiredPositiveSegments) {
-                        "${decision.positiveSegments} of ${decision.requiredPositiveSegments} cry segments. " +
-                            "Continuing to listen."
-                    } else if (score >= 0.30f) {
-                        "Cry confirmed. Sending an alert..."
+                    } else if (decision.detectorState == CryDetectorState.POSSIBLE_CRY) {
+                        "Possible cry: ${decision.positiveSegments} of " +
+                            "${decision.requiredPositiveSegments} confirming segments."
+                    } else if (decision.shouldAlert) {
+                        "Cry confirmed. Sending one alert to the watch."
+                    } else if (decision.detectorState == CryDetectorState.COOLDOWN ||
+                        decision.detectorState == CryDetectorState.ALERTED
+                    ) {
+                        "Alert sent. Waiting for the sound to calm before rearming."
                     } else {
-                        "The room sounds calm."
+                        "State: ${decision.detectorState.name.lowercase(Locale.US)} | " +
+                            "score ${String.format(Locale.US, "%.2f", decision.smoothedScore)}"
                     }
                 }
             },
@@ -251,7 +253,7 @@ class MainActivity : Activity() {
         root.addView(watchText, fullWidth(top = 14))
 
         root.addView(TextView(this).apply {
-            text = "YAMNet AI  |  5 sec samples  |  20 of 24 confirms"
+            text = "YAMNet AI  |  5 sec samples  |  state-machine alerts"
             textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(135, 143, 151))

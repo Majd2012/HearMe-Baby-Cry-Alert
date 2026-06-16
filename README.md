@@ -49,17 +49,127 @@ Use matching signing keys for both modules when producing release builds.
 
 ## Detection behavior
 
-Audio is divided into 5-second segments. YAMNet evaluates each segment and a
-segment is positive when its baby-cry score is at least `0.30`. The decision
-policy evaluates the latest 24 segments
-(2 minutes) and sends an alert when at least 20 are positive. Repeat alerts are
-suppressed for 2 minutes by default. `CryDecisionPolicy` accepts any cooldown
-from 2 to 5 minutes, so the default can be changed to 5 minutes after field
-testing.
+Audio is divided into 5-second app segments. YAMNet evaluates each segment and
+the detector state machine applies smoothing, a trigger threshold, a lower clear
+threshold, persistence, cooldown, and rearming rules. The default mobile
+configuration is:
+
+- trigger threshold: `0.30`
+- clear threshold: `0.20`
+- smoothing: rolling mean over 3 app segments
+- persistence: 3 positive app segments
+- cooldown: 120 seconds
+- rearming: 5 seconds below the clear threshold
+
+The state machine uses `IDLE`, `POSSIBLE_CRY`, `CONFIRMED_CRY`, `ALERTED`,
+`COOLDOWN`, and `REARMING`. The phone sends a watch message only when a cry is
+confirmed, and duplicate alerts are suppressed until the event clears and the
+detector rearms.
 
 Before reporting final accuracy, verify the mobile implementation against the
 same validation audio used by the Python evaluation. In particular, compare
 the 5-second frame aggregation and the `0.30` threshold.
+
+## Long-audio evaluation
+
+The repository includes a Python toolkit in `tools/long_audio_evaluation/`.
+It processes long audio incrementally, records YAMNet frame scores, evaluates
+event-level alerts, sweeps alert parameters, generates charts, and writes a
+Markdown/HTML report.
+
+Install dependencies from Windows PowerShell:
+
+```powershell
+cd C:\Users\ibrahem_PC\Documents\Codex\2026-06-08\smart-baby-cry-detection-and-smartwatch
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r .\tools\long_audio_evaluation\requirements.txt
+pip install tensorflow
+```
+
+The evaluator uses the app model at:
+
+```text
+mobile/src/main/assets/yamnet.tflite
+```
+
+Ground-truth CSV format:
+
+```csv
+event_id,start_sec,end_sec,label
+1,300.25,314.80,Cry
+2,00:17:05.500,00:17:21.200,Cry
+```
+
+Run one evaluation:
+
+```powershell
+python .\tools\long_audio_evaluation\evaluate_long_audio.py `
+  --audio .\data\test_night.wav `
+  --ground-truth .\data\ground_truth.csv `
+  --output-dir .\results\test_night
+```
+
+Run a parameter sweep:
+
+```powershell
+python .\tools\long_audio_evaluation\evaluate_long_audio.py `
+  --audio .\data\test_night.wav `
+  --ground-truth .\data\ground_truth.csv `
+  --output-dir .\results\test_night_sweep `
+  --sweep `
+  --max-sweep-combinations 5000
+```
+
+Build a reproducible synthetic one-hour night from user-supplied audio:
+
+```powershell
+python .\tools\long_audio_evaluation\build_synthetic_night.py `
+  --background .\data\room_background.wav `
+  --cry-dir .\data\cry_samples `
+  --duration-hours 1 `
+  --number-of-events 8 `
+  --seed 42 `
+  --output .\data\synthetic_night.wav
+```
+
+The generator writes:
+
+- `synthetic_night.wav`
+- `synthetic_night_ground_truth.csv`
+- `synthetic_night_manifest.json`
+
+Evaluation outputs are written under `results/<run_name>/`:
+
+- `frame_scores.csv`
+- `ground_truth_normalized.csv`
+- `detected_events.csv`
+- `alert_log.csv`
+- `parameter_sweep.csv`
+- `best_sensitive_config.json`
+- `best_balanced_config.json`
+- `best_conservative_config.json`
+- `summary_metrics.json`
+- `report.md`
+- `report.html`
+- `plots/*.png`
+- `plots/*.svg`
+
+Interpretation:
+
+- Event recall tells how many real crying events produced an alert.
+- Event precision tells how many generated alerts matched real crying events.
+- False alerts per hour estimates unnecessary wakeups.
+- Latency is `alert_timestamp - ground_truth_cry_start`.
+- Negative latency means an early alert; high positive latency means a late
+  alert.
+- The Pareto plot shows the trade-off between recall, false alerts, and delay.
+
+Python-versus-app parity instructions are in:
+
+```text
+tools/long_audio_evaluation/app_python_parity.md
+```
 
 ## Project structure
 

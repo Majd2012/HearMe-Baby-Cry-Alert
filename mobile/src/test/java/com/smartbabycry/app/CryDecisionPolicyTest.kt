@@ -1,74 +1,89 @@
 package com.smartbabycry.app
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CryDecisionPolicyTest {
-    @Test
-    fun requiresTwentyPositiveSegmentsInFullTwentyFourSegmentWindow() {
-        val policy = CryDecisionPolicy()
-
-        repeat(19) { index ->
-            assertFalse(policy.update(score = 0.30f, nowMillis = index * 5_000L).shouldAlert)
-        }
-        repeat(4) { index ->
-            assertFalse(policy.update(score = 0.10f, nowMillis = (19 + index) * 5_000L).shouldAlert)
-        }
-        assertTrue(policy.update(score = 0.30f, nowMillis = 23 * 5_000L).shouldAlert)
-    }
+    private fun policy() = CryDecisionPolicy(
+        CryDetectionConfig(
+            triggerThreshold = 0.30f,
+            clearThreshold = 0.20f,
+            persistenceFrames = 3,
+            smoothingMode = SmoothingMode.NONE,
+            cooldownMillis = 20_000L,
+            rearmingMillis = 10_000L,
+        ),
+    )
 
     @Test
-    fun doesNotAlertWhenOnlyNineteenOfTwentyFourSegmentsArePositive() {
-        val policy = CryDecisionPolicy()
+    fun noAlertWhenScoresStayBelowThreshold() {
+        val policy = policy()
 
-        repeat(19) { index ->
-            assertFalse(policy.update(score = 0.80f, nowMillis = index * 5_000L).shouldAlert)
-        }
-        repeat(5) { index ->
-            assertFalse(policy.update(score = 0.20f, nowMillis = (19 + index) * 5_000L).shouldAlert)
-        }
-    }
-
-    @Test
-    fun usesRollingWindowInsteadOfResettingAfterTwentyFourSegments() {
-        val policy = CryDecisionPolicy()
-
-        repeat(4) { index ->
+        repeat(10) { index ->
             assertFalse(policy.update(score = 0.10f, nowMillis = index * 5_000L).shouldAlert)
         }
-        repeat(19) { index ->
-            assertFalse(policy.update(score = 0.80f, nowMillis = (4 + index) * 5_000L).shouldAlert)
-        }
-        assertFalse(policy.update(score = 0.10f, nowMillis = 23 * 5_000L).shouldAlert)
-        assertTrue(policy.update(score = 0.80f, nowMillis = 24 * 5_000L).shouldAlert)
     }
 
     @Test
-    fun cooldownSuppressesRepeatedAlertForTwoMinutes() {
-        val policy = CryDecisionPolicy()
+    fun alertsAfterRequiredPositiveFrames() {
+        val policy = policy()
 
-        repeat(23) { index ->
-            assertFalse(policy.update(score = 0.80f, nowMillis = index * 5_000L).shouldAlert)
-        }
-        assertTrue(policy.update(score = 0.80f, nowMillis = 115_000L).shouldAlert)
-        assertFalse(policy.update(score = 0.80f, nowMillis = 120_000L).shouldAlert)
-        assertFalse(policy.update(score = 0.80f, nowMillis = 230_000L).shouldAlert)
-        assertTrue(policy.update(score = 0.80f, nowMillis = 235_000L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 0L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 5_000L).shouldAlert)
+        val state = policy.update(score = 0.80f, nowMillis = 10_000L)
+
+        assertTrue(state.shouldAlert)
+        assertEquals(CryDetectorState.ALERTED, state.detectorState)
     }
 
     @Test
-    fun reportsConfirmationProgress() {
-        val policy = CryDecisionPolicy()
+    fun ignoresOneIsolatedScoreSpike() {
+        val policy = policy()
 
-        repeat(7) { policy.update(score = 0.80f, nowMillis = it * 5_000L) }
-        val state = policy.update(score = 0.10f, nowMillis = 35_000L)
+        assertFalse(policy.update(score = 0.90f, nowMillis = 0L).shouldAlert)
+        assertFalse(policy.update(score = 0.10f, nowMillis = 5_000L).shouldAlert)
+        assertFalse(policy.update(score = 0.10f, nowMillis = 10_000L).shouldAlert)
+    }
 
-        assertFalse(state.shouldAlert)
-        assertFalse(state.isCurrentSegmentPositive)
-        org.junit.Assert.assertEquals(7, state.positiveSegments)
-        org.junit.Assert.assertEquals(8, state.collectedSegments)
-        org.junit.Assert.assertEquals(20, state.requiredPositiveSegments)
-        org.junit.Assert.assertEquals(24, state.windowSize)
+    @Test
+    fun hysteresisRequiresClearThresholdBeforeRearming() {
+        val policy = policy()
+
+        assertFalse(policy.update(score = 0.80f, nowMillis = 0L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 5_000L).shouldAlert)
+        assertTrue(policy.update(score = 0.80f, nowMillis = 10_000L).shouldAlert)
+
+        assertEquals(CryDetectorState.ALERTED, policy.update(score = 0.25f, nowMillis = 15_000L).detectorState)
+        assertEquals(CryDetectorState.COOLDOWN, policy.update(score = 0.10f, nowMillis = 20_000L).detectorState)
+    }
+
+    @Test
+    fun cooldownSuppressesRepeatedAlertDuringOneEvent() {
+        val policy = policy()
+
+        assertFalse(policy.update(score = 0.80f, nowMillis = 0L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 5_000L).shouldAlert)
+        assertTrue(policy.update(score = 0.80f, nowMillis = 10_000L).shouldAlert)
+
+        repeat(8) { index ->
+            assertFalse(policy.update(score = 0.85f, nowMillis = 15_000L + index * 5_000L).shouldAlert)
+        }
+    }
+
+    @Test
+    fun rearmsAfterSustainedLowScores() {
+        val policy = policy()
+
+        assertFalse(policy.update(score = 0.80f, nowMillis = 0L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 5_000L).shouldAlert)
+        assertTrue(policy.update(score = 0.80f, nowMillis = 10_000L).shouldAlert)
+
+        assertFalse(policy.update(score = 0.10f, nowMillis = 20_000L).shouldAlert)
+        assertFalse(policy.update(score = 0.10f, nowMillis = 30_000L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 35_000L).shouldAlert)
+        assertFalse(policy.update(score = 0.80f, nowMillis = 40_000L).shouldAlert)
+        assertTrue(policy.update(score = 0.80f, nowMillis = 45_000L).shouldAlert)
     }
 }

@@ -1,5 +1,9 @@
 package com.smartbabycry.app
-   
+
+import android.content.Context
+import com.google.android.gms.wearable.Wearable
+import java.nio.charset.StandardCharsets
+
 class WearAlertSender(context: Context) {
     companion object {
         const val CRY_ALERT_PATH = "/baby-cry/alert"
@@ -40,4 +44,3 @@ class WearAlertSender(context: Context) {
             .addOnFailureListener { callback(Result.failure(it)) }
     }
 }
-
