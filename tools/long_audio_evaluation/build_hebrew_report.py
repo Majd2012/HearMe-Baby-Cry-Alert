@@ -26,6 +26,7 @@ from scientific_validation import (
     evaluate_events,
     row_to_policy,
 )
+from generate_state_chart import main as generate_state_charts
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +42,7 @@ TITLE = "מערכת לזיהוי בכי תינוק והתרעה לשעון חכ�
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     regenerate_true_noncry_zoom()
+    generate_state_charts()
     doc = Document()
     setup_document(doc)
     add_cover(doc)
@@ -209,6 +211,15 @@ def add_alert_logic(doc):
     add_p(doc, "כדי למנוע התרעה בעקבות קפיצה רגעית בציון המודל, הוגדרה מכונת מצבים מפורשת:")
     add_bullets(doc, ["IDLE", "POSSIBLE_CRY", "CONFIRMED_CRY", "ALERTED", "COOLDOWN", "REARMING"])
     add_p(doc, "מצב POSSIBLE_CRY מאפשר לאסוף ראיות לפני התרעה. לאחר אישור בכי המערכת נכנסת למצב ALERTED ולאחר מכן COOLDOWN, כדי שלא להעיר את ההורה שוב ושוב במהלך אותו אירוע בכי רציף. מצב REARMING דורש שהציון יחזור להיות נמוך לפני שהמערכת מוכנה לאירוע חדש.")
+    chart_path = OUT_DIR / "state_chart_hebrew.png"
+    if not chart_path.exists():
+        raise FileNotFoundError(chart_path)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run()
+    r.add_picture(str(chart_path), width=Inches(6.2))
+    add_p(doc, "איור: מכונת המצבים של לוגיקת ההתרעה החדשה.", bold=True)
+    add_p(doc, "התרשים מראה שהמערכת כבר אינה שולחת התרעה על סמך ציון גבוה יחיד. במקום זאת היא עוברת ברצף מבוקר של מצבים: חשד לבכי, אישור באמצעות התמדה, שליחת התרעה, זמן קירור והכנה מחדש. מבנה זה מפחית יקיצות שווא ומונע התרעות כפולות כאשר אותו אירוע בכי רציף עדיין נמשך.")
 
 
 def add_config_sections(doc):
